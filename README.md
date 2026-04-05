@@ -322,6 +322,84 @@
 
 - 改成根目录统一 `application/`。
 
+---
+
+## 2026-04-06 编译修复: struct_typedef 类型冲突 + 链接错误 + inline 警告
+
+### 1. 本次修改目标
+
+- 修复 `struct_typedef.h` 手动重定义 `int32_t`/`uint32_t` 与 ARM GCC `<stdint.h>` 冲突导致的编译错误
+- 修复 `remote_control.h` 缺少 `extern "C"` 导致 C++ 翻译单元链接时找不到 C 符号
+- 消除 `chassis.h` / `gimbal.h` 中 `inline` 函数声明但无定义产生的所有警告
+
+### 2. 修改文件
+
+| 文件                                   | 修改说明                                                                                           |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `application/typedef/struct_typedef.h` | 移除手动 typedef 的 `int8_t`~`uint64_t`，改为 `#include <stdint.h>`，只保留 `bool_t`/`fp32`/`fp64` |
+| `application/other/remote_control.h`   | 添加 `extern "C" { }` 包裹，使 C 函数在 C++ 编译单元正确链接                                       |
+| `application/chassis/chassis.h`        | `inline` 声明改为普通函数声明（无定义体时 `inline` 在 C 中触发 "declared but never defined" 警告） |
+| `application/gimbal/gimbal.h`          | 同上；同时将声明移入 `#if GIMBAL_TYPE != GIMBAL_NONE` 守卫内                                       |
+
+### 3. 具体 bug 分析
+
+#### Bug 1: `struct_typedef.h` 类型冲突 (编译错误)
+
+**现象**：
+
+```
+error: conflicting types for 'int32_t'; have '__int32_t' {aka 'long int'}
+note: previous declaration of 'int32_t' with type 'int32_t' {aka 'int'}
+```
+
+**原因**：这是从 F4 工程复制来的头文件。在 STM32F4 的 arm-none-eabi-gcc 上 `int` 和 `long` 在 32 位 ARM 上恰好都是 4 字节且被视为兼容类型，所以不报错。但 STM32H7 使用的 GCC 13.3.1 严格区分 `signed int` 和 `long int`：
+
+- `struct_typedef.h`: `typedef signed int int32_t;` → 底层类型是 `int`
+- `<stdint.h>`: `typedef __int32_t int32_t;` → 底层类型是 `long int`
+
+两者虽然大小相同，但 C/C++ 标准认为它们是不同类型。
+
+**修复**：删除所有手动 typedef，直接 `#include <stdint.h>`。
+
+#### Bug 2: `remote_control_init()` 链接错误 (undefined reference)
+
+**现象**：
+
+```
+undefined reference to `remote_control_init()'
+undefined reference to `get_remote_control_point()'
+```
+
+**原因**：`remote_control.c` 是 C 文件，函数以 C 链接（无 name mangling）编译。但 `remote_control.h` 没有 `extern "C"` 保护，被 C++ 的 `tsk_config_and_callback.cpp` include 时，编译器按 C++ mangled 名查找符号，链接器自然找不到。
+
+**修复**：在 `remote_control.h` 添加 `#ifdef __cplusplus extern "C" { #endif` 包裹。
+
+#### Bug 3: inline 函数警告
+
+**现象**：
+
+```
+warning: inline function 'ChassisGetStatus' declared but never defined
+warning: inline function 'GetGimbalStatus' declared but never defined
+```
+
+（共 12 个警告）
+
+**原因**：`chassis.h` 和 `gimbal.h` 在 `#if xxx_TYPE != xxx_NONE` 守卫**内**声明了 `inline` 函数，但由于当前 `CHASSIS_TYPE == CHASSIS_NONE` / `GIMBAL_TYPE == GIMBAL_NONE`，.c 文件里的定义体也被 `#if` 跳过，导致只有声明没有定义。GCC 的 GNU inline 语义下这会触发警告。更深层的问题是 `gimbal.h` 的声明放在了 `#if` 守卫**之外**。
+
+**修复**：
+
+- 将 `inline` 改为普通函数声明（后续实现时再加 `inline` + 定义体）
+- 将 `gimbal.h` 的声明移入 `#if GIMBAL_TYPE != GIMBAL_NONE` 守卫内
+
+### 4. 编译结果
+
+```
+Build: 0 errors, 0 warnings
+FLASH: 165852 B / 1 MB (15.82%)
+RAM_D1: 317872 B / 320 KB (97.01%)
+```
+
 #### 问题 2：根目录新增源码默认不会被当前 CMake 编译
 
 本次处理：

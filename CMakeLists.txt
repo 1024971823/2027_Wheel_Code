@@ -48,12 +48,15 @@ file(GLOB_RECURSE USER_SOURCES
     ${CMAKE_SOURCE_DIR}/User_File/**/*.cpp
     ${CMAKE_SOURCE_DIR}/application/**/*.c
     ${CMAKE_SOURCE_DIR}/application/**/*.cpp
+    ${CMAKE_SOURCE_DIR}/application/*.c
+    ${CMAKE_SOURCE_DIR}/application/*.cpp
 )
 
 # 递归收集 User_File 目录下所有包含 .h 文件的目录，并去重
 file(GLOB_RECURSE USER_HEADER_PATHS
     ${CMAKE_SOURCE_DIR}/User_File/**/*.h
     ${CMAKE_SOURCE_DIR}/application/**/*.h
+    ${CMAKE_SOURCE_DIR}/application/*.h
 )
 set(USER_INCLUDE_DIRS "")
 foreach(header ${USER_HEADER_PATHS})
@@ -66,6 +69,8 @@ list(REMOVE_DUPLICATES USER_INCLUDE_DIRS)
 file(GLOB_RECURSE USER_HEADER_PATHS
     ${CMAKE_SOURCE_DIR}/User_File/**/*.h
     ${CMAKE_SOURCE_DIR}/application/**/*.h
+    ${CMAKE_SOURCE_DIR}/application/*.h
+
 )
 set(USER_INCLUDE_DIRS "")
 foreach(header ${USER_HEADER_PATHS})

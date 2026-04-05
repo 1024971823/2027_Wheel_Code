@@ -5,8 +5,8 @@
 
 #include "tsk_config_and_callback.h"
 
-#include "app_chassis.h"
-#include "app_gimbal.h"
+#include "chassis.h"
+#include "gimbal.h"
 #include "bsp_bmi088.h"
 #include "bsp_buzzer.h"
 #include "bsp_key.h"
@@ -37,7 +37,7 @@ uint32_t debug_unknown_can_count = 0;
 void Serial_USB_Call_Back(uint8_t *Buffer, uint16_t Length)
 {
     Vofa_USB.USB_RxCallback(Buffer, Length);
-    App_Gimbal_Vofa_Set_Debug_Variable(Vofa_USB.Get_Variable_Index(), Vofa_USB.Get_Variable_Value());
+    
 }
 
 void SPI2_Callback(uint8_t *Tx_Buffer, uint8_t *Rx_Buffer, uint16_t Tx_Length, uint16_t Rx_Length)
@@ -63,11 +63,11 @@ void CAN1_Callback(FDCAN_RxHeaderTypeDef &Header, uint8_t *Buffer)
     switch (Header.Identifier)
     {
     case 0x206:
-        App_Gimbal_CAN_RxCpltCallback();
+        
         break;
     case 0x00:
         debug_unknown_can_count++;
-        App_Chassis_CAN_RxCpltCallback();
+        
         break;
     default:
         debug_last_unknown_can_id = Header.Identifier;
@@ -158,7 +158,7 @@ void Task1ms_Callback()
         BSP_Key.TIM_50ms_Read_PeriodElapsedCallback();
     }
 
-    App_Gimbal_Task_1ms_Callback();
+    // App_Gimbal_Task_1ms_Callback();
 
     static int mod128 = 0;
     mod128++;
@@ -168,7 +168,7 @@ void Task1ms_Callback()
         BSP_BMI088.TIM_128ms_Calculate_PeriodElapsedCallback();
     }
 
-    TIM_1ms_CAN_PeriodElapsedCallback();
+    // TIM_1ms_CAN_PeriodElapsedCallback();
     TIM_1ms_IWDG_PeriodElapsedCallback();
 }
 
@@ -189,7 +189,7 @@ void Task_Init()
     USB_Init(Serial_USB_Call_Back);
     SPI_Init(&hspi2, SPI2_Callback);
     SPI_Init(&hspi6, nullptr);
-    CAN_Init(&hfdcan1, CAN1_Callback);
+    //CAN_Init(&hfdcan1, CAN1_Callback);
     ADC_Init(&hadc1, 1);
     OSPI_Init(&hospi2, OSPI2_Polling_Callback, OSPI2_Rx_Callback, OSPI2_Tx_Callback);
 
@@ -207,8 +207,8 @@ void Task_Init()
     BSP_Key.Init();
     BSP_BMI088.Init();
 
-    App_Gimbal_Init(&hfdcan1);
-    App_Chassis_Init(&hfdcan1, &Vofa_USB);
+    //App_Gimbal_Init(&hfdcan1);
+    //App_Chassis_Init(&hfdcan1, &Vofa_USB);
 
     remote_control_init();
 
@@ -272,7 +272,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 extern "C" void RTOS_Ctrl_Task_Loop(void)
 {
-    App_Chassis_Ctrl_Task_Loop();
+    //App_Chassis_Ctrl_Task_Loop();
 }
 
 extern "C" void RTOS_Remote_Task_Loop(void)
@@ -325,7 +325,7 @@ extern "C" void RTOS_Remote_Task_Loop(void)
 
 extern "C" void RTOS_Monitor_Task_Loop(void)
 {
-    App_Chassis_Monitor_Task_Loop();
+    //App_Chassis_Monitor_Task_Loop();
 }
 
 /************************ COPYRIGHT(C) USTC-ROBOWALKER **************************/

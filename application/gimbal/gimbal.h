@@ -22,18 +22,17 @@
 #include "struct_typedef.h"
 #include "stdbool.h"
 
-// API
-
-extern inline uint8_t GetGimbalStatus(void);
-extern inline uint32_t GetGimbalDuration(void);
-extern inline float GetGimbalSpeed(uint8_t axis);
-extern inline float GetGimbalVelocity(uint8_t axis);
-extern inline float GetGimbalDeltaYawMid(void);
-extern inline bool GetGimbalInitJudgeReturn(void);
-extern inline float CmdGimbalJointState(uint8_t axis);
-
 #if GIMBAL_TYPE != GIMBAL_NONE
 
-#endif  // GIMBAL_TYPE
-#endif  // GIMBAL_H
+// API
+uint8_t GetGimbalStatus(void);
+uint32_t GetGimbalDuration(void);
+float GetGimbalSpeed(uint8_t axis);
+float GetGimbalVelocity(uint8_t axis);
+float GetGimbalDeltaYawMid(void);
+bool GetGimbalInitJudgeReturn(void);
+float CmdGimbalJointState(uint8_t axis);
+
+#endif // GIMBAL_TYPE
+#endif // GIMBAL_H
 /*------------------------------ End of File ------------------------------*/

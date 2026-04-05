@@ -27,7 +27,7 @@
       AT9S PRO 遥控器中值为 1000
       HT8A 遥控器中值为 992
       ET08A 遥控器中值为 1024
-  
+
   ET08A 遥控器设置指南：
     1. 设置 主菜单->系统设置->摇杆模式 为模式2
     2. 设置 主菜单->通用功能->通道设置 5通道为 [辅助1 SB --] 6通道为 [辅助2 SC --]
@@ -45,6 +45,10 @@
 #include "struct_typedef.h"
 #include "attribute_typedef.h"
 #include "macro_typedef.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define SBUS_RX_BUF_NUM 36u
 
@@ -170,35 +174,39 @@ typedef struct
         uint16_t ch[16];
         uint8_t connect_flag;
 } __packed__ Sbus_t;
-// clang-format on
+        // clang-format on
 
-/* ----------------------- Internal Data ----------------------------------- */
+        /* ----------------------- Internal Data ----------------------------------- */
 
-extern void remote_control_init(void);
-extern const RC_ctrl_t * get_remote_control_point(void);
-extern const Sbus_t *get_sbus_point(void);
-extern uint8_t RC_data_is_error(void);
-extern void slove_RC_lost(void);
-extern void slove_data_error(void);
+        extern void remote_control_init(void);
+        extern const RC_ctrl_t *get_remote_control_point(void);
+        extern const Sbus_t *get_sbus_point(void);
+        extern uint8_t RC_data_is_error(void);
+        extern void slove_RC_lost(void);
+        extern void slove_data_error(void);
 
-/**
- * @brief  UART5 DMA 接收回调（由 bsp_rc → drv_uart 中间件触发）
- * @param  buffer  接收缓冲区指针
- * @param  length  本帧实际接收长度
- */
-extern void remote_control_rx_callback(uint8_t *buffer, uint16_t length);
+        /**
+         * @brief  UART5 DMA 接收回调（由 bsp_rc → drv_uart 中间件触发）
+         * @param  buffer  接收缓冲区指针
+         * @param  length  本帧实际接收长度
+         */
+        extern void remote_control_rx_callback(uint8_t *buffer, uint16_t length);
 
-/******************************************************************/
-/* API                                                            */
-/******************************************************************/
+        /******************************************************************/
+        /* API                                                            */
+        /******************************************************************/
 
-extern inline bool GetRcOffline(void);
+        extern inline bool GetRcOffline(void);
 
-extern inline float GetDt7RcCh(uint8_t ch);
-extern inline char GetDt7RcSw(uint8_t sw);
-extern inline float GetDt7MouseSpeed(uint8_t axis);
-extern inline bool GetDt7Mouse(uint8_t key);
-extern inline bool GetDt7Keyboard(uint8_t key);
+        extern inline float GetDt7RcCh(uint8_t ch);
+        extern inline char GetDt7RcSw(uint8_t sw);
+        extern inline float GetDt7MouseSpeed(uint8_t axis);
+        extern inline bool GetDt7Mouse(uint8_t key);
+        extern inline bool GetDt7Keyboard(uint8_t key);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 /*------------------------------ End of File ------------------------------*/

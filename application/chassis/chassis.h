@@ -24,45 +24,30 @@
 // inline void ChassisSetCali(void);
 // inline void ChassisCmdCali(void);
 
-#define rc_deadband_limit(input, output, dealine)          \
-    {                                                      \
-        if ((input) > (dealine) || (input) < -(dealine)) { \
-            (output) = (input);                            \
-        } else {                                           \
-            (output) = 0;                                  \
-        }                                                  \
+#define rc_deadband_limit(input, output, dealine)        \
+    {                                                    \
+        if ((input) > (dealine) || (input) < -(dealine)) \
+        {                                                \
+            (output) = (input);                          \
+        }                                                \
+        else                                             \
+        {                                                \
+            (output) = 0;                                \
+        }                                                \
     }
 
-typedef enum __ChassisState {
-    CHASSIS_STATE_NORNAL,  // 底盘正常状态
-    CHASSIS_STATE_ERROR    // 底盘错误状态
+typedef enum __ChassisState
+{
+    CHASSIS_STATE_NORNAL, // 底盘正常状态
+    CHASSIS_STATE_ERROR   // 底盘错误状态
 } ChassisState_e;
 
-/**
- * @brief 获取底盘状态（未启用）
- */
-inline uint8_t ChassisGetStatus(void);
+uint8_t ChassisGetStatus(void);
+uint32_t ChassisGetDuration(void);
+float ChassisGetSpeedVx(void);
+float ChassisGetSpeedVy(void);
+float ChassisGetSpeedWz(void);
 
-/**
- * @brief 获取底盘控制周期 (ms)
- */
-inline uint32_t ChassisGetDuration(void);
-
-/**
- * @brief 获取底盘坐标系下的速度vx (m/s)
- */
-inline float ChassisGetSpeedVx(void);
-
-/**
- * @brief 获取底盘坐标系下的速度vy (m/s)
- */
-inline float ChassisGetSpeedVy(void);
-
-/**
- * @brief 获取底盘坐标系下的速度wz (rad/s)
- */
-inline float ChassisGetSpeedWz(void);
-
-#endif  // CHASSIS_TYPE
-#endif  // CHASSIS_H
+#endif // CHASSIS_TYPE
+#endif // CHASSIS_H
 /*------------------------------ End of File ------------------------------*/
