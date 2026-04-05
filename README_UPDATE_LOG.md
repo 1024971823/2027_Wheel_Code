@@ -180,3 +180,113 @@
 
 ### 6. 后续怎么改
 ```
+
+---
+
+## 2026-04-06 application 外置重构
+
+### 1. 本次修改目标
+- 删除 `User_File/3_APP` 这一层命名。
+- 在工程最外层新增统一的 `application/` 业务应用层。
+- 按你指定的目录结构预留业务模块入口。
+- 让 CMake 能正确编译根目录下的 `application/` 源码。
+
+### 2. 修改文件
+
+#### 新增文件
+- `application/chassis/app_chassis.h`
+- `application/chassis/app_chassis.cpp`
+- `application/gimbal/app_gimbal.h`
+- `application/gimbal/app_gimbal.cpp`
+- `application/assist/.gitkeep`
+- `application/calibrate/.gitkeep`
+- `application/communication/.gitkeep`
+- `application/custom_controller/.gitkeep`
+- `application/IMU/.gitkeep`
+- `application/mechanical_arm/.gitkeep`
+- `application/music/.gitkeep`
+- `application/other/.gitkeep`
+- `application/referee/.gitkeep`
+- `application/remote_control/.gitkeep`
+- `application/robot_cmd/.gitkeep`
+- `application/shoot/.gitkeep`
+- `application/typedef/.gitkeep`
+
+#### 修改文件
+- `CMakeLists.txt`
+- `README_UPDATE_LOG.md`
+
+#### 删除内容
+- `User_File/3_APP` 下原有应用层文件将迁移后删除。
+
+### 3. 具体改了什么
+
+#### 3.1 application 目录外置
+位置：
+- 工程根目录 `application/`
+
+修改内容：
+- 将原先位于 `User_File/3_APP` 的应用层移动到根目录。
+- 底盘模块放到 `application/chassis/`。
+- 云台模块放到 `application/gimbal/`。
+
+#### 3.2 预留完整业务目录
+位置：
+- `application/assist/`
+- `application/calibrate/`
+- `application/communication/`
+- `application/custom_controller/`
+- `application/IMU/`
+- `application/mechanical_arm/`
+- `application/music/`
+- `application/other/`
+- `application/referee/`
+- `application/remote_control/`
+- `application/robot_cmd/`
+- `application/shoot/`
+- `application/typedef/`
+
+修改内容：
+- 先创建目录占位，避免后续扩展时再动整体结构。
+
+#### 3.3 构建系统适配
+位置：
+- `CMakeLists.txt`
+
+修改内容：
+- 在源码递归收集里加入 `application/**/*.c` 和 `application/**/*.cpp`。
+- 在头文件 include 目录递归收集里加入 `application/**/*.h`。
+
+### 4. 这次修改解决的问题
+
+#### 问题 1：应用层放在 `User_File/3_APP` 不符合你要的最终工程结构
+本次处理：
+- 改成根目录统一 `application/`。
+
+#### 问题 2：根目录新增源码默认不会被当前 CMake 编译
+本次处理：
+- 已同步修改 `CMakeLists.txt`，避免新目录创建后代码不参与构建。
+
+### 5. 当前遗留问题
+
+#### 问题 1：旧目录删除后，IDE 可能需要刷新
+现象：
+- 一些编辑器会暂时保留旧目录缓存。
+
+后续怎么改：
+- 刷新工程树。
+- 如使用 CMake Tools，重新执行一次 `Configure`。
+
+#### 问题 2：目录现在只是结构预留
+现状：
+- 目前只有 `chassis` 和 `gimbal` 有实际代码。
+- 其他目录只是预留空位。
+
+后续怎么改：
+- 后续新增模块时，直接放到对应子目录。
+- 保持 `Task` 层只做调度，不把业务逻辑再写回 `User_File/4_Task`。
+
+### 6. 后续建议
+- 遥控相关逻辑后续可以从底盘模块继续拆到 `application/remote_control/`。
+- 电机目标下发和执行器命令可以再从 `chassis/gimbal` 抽到 `application/robot_cmd/`。
+- IMU 融合、姿态解算后续可以从当前 BSP/Task 过渡到 `application/IMU/`。

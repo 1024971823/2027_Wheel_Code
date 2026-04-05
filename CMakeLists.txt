@@ -46,10 +46,15 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 file(GLOB_RECURSE USER_SOURCES
     ${CMAKE_SOURCE_DIR}/User_File/**/*.c
     ${CMAKE_SOURCE_DIR}/User_File/**/*.cpp
+    ${CMAKE_SOURCE_DIR}/application/**/*.c
+    ${CMAKE_SOURCE_DIR}/application/**/*.cpp
 )
 
 # 递归收集 User_File 目录下所有包含 .h 文件的目录，并去重
-file(GLOB_RECURSE USER_HEADER_PATHS ${CMAKE_SOURCE_DIR}/User_File/**/*.h)
+file(GLOB_RECURSE USER_HEADER_PATHS
+    ${CMAKE_SOURCE_DIR}/User_File/**/*.h
+    ${CMAKE_SOURCE_DIR}/application/**/*.h
+)
 set(USER_INCLUDE_DIRS "")
 foreach(header ${USER_HEADER_PATHS})
     get_filename_component(dir ${header} DIRECTORY)
@@ -58,7 +63,10 @@ endforeach()
 list(REMOVE_DUPLICATES USER_INCLUDE_DIRS)
 
 # 自动递归收集 User_File 下所有 .h 文件目录
-file(GLOB_RECURSE USER_HEADER_PATHS ${CMAKE_SOURCE_DIR}/User_File/**/*.h)
+file(GLOB_RECURSE USER_HEADER_PATHS
+    ${CMAKE_SOURCE_DIR}/User_File/**/*.h
+    ${CMAKE_SOURCE_DIR}/application/**/*.h
+)
 set(USER_INCLUDE_DIRS "")
 foreach(header ${USER_HEADER_PATHS})
     get_filename_component(dir ${header} DIRECTORY)
