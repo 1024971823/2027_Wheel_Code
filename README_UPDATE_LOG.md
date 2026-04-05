@@ -290,3 +290,117 @@
 - 遥控相关逻辑后续可以从底盘模块继续拆到 `application/remote_control/`。
 - 电机目标下发和执行器命令可以再从 `chassis/gimbal` 抽到 `application/robot_cmd/`。
 - IMU 融合、姿态解算后续可以从当前 BSP/Task 过渡到 `application/IMU/`。
+
+---
+
+## 2026-04-06 bsp_rc 按 H723 + UART5 重构
+
+### 1. 本次修改目标
+- 将 `bsp_rc` 从旧的 `USART3` 假设改为当前工程实际使用的 `UART5`。
+- 按 STM32H723 的 UART/DMA 方式重写遥控底层接收。
+- 保留 DJI DBUS 的关键串口配置说明，避免因为校验位/字长配置错误导致解包异常。
+
+### 2. 修改文件
+- `User_File/2_Device/Remote/bsp_rc.h`
+- `User_File/2_Device/Remote/bsp_rc.c`
+
+### 3. 具体改了什么
+
+#### 3.1 底层串口从 USART3 改为 UART5
+位置：
+- `User_File/2_Device/Remote/bsp_rc.c`
+
+修改内容：
+- 底层句柄从 `huart3` / `hdma_usart3_rx` 改为 `huart5` / `hdma_uart5_rx`。
+- DMA 寄存器访问改为 `UART5` 当前工程对应的 RX DMA 通道。
+
+#### 3.2 保留 H723 上 DBUS 的正确字长/校验配置
+位置：
+- `User_File/2_Device/Remote/bsp_rc.h`
+- `User_File/2_Device/Remote/bsp_rc.c`
+
+修改内容：
+- 增加注释，明确 DJI DBUS 在 STM32H723 HAL 上必须配置成：
+  - `100000 baud`
+  - `UART_WORDLENGTH_9B`
+  - `UART_PARITY_EVEN`
+  - 默认 `UART_STOPBITS_1`
+- 明确说明：如果错误配置成 `8B + Even`，有效数据会变成 7 位，DBUS 解包会错位。
+
+#### 3.3 为后续兼容 SBUS/i6x 预留停止位宏
+位置：
+- `User_File/2_Device/Remote/bsp_rc.h`
+
+修改内容：
+- 新增 `BSP_RC_UART_STOPBITS` 宏，默认值是 `UART_STOPBITS_1`。
+- 如果后续不是 DJI DBUS，而是按当前 `i6x` 这类 SBUS 链路复用 `UART5`，只需要改成 `UART_STOPBITS_2`。
+
+### 4. 这次修改解决的问题
+
+#### 问题 1：原 `bsp_rc` 假定工程走 USART3，但当前工程实际遥控链路在 UART5
+本次处理：
+- 已切换到底层 `UART5`。
+
+#### 问题 2：DBUS 在 H723 上最容易出错的是字长和校验位
+本次处理：
+- 已把 `9B + Even` 的关键原因写进 BSP 注释和配置中，避免后面重复踩坑。
+
+### 5. 当前遗留问题
+
+#### 问题 1：当前工程里 `i6x` 用的是 SBUS，不是 DJI DBUS
+现状：
+- `i6x` 当前链路说明的是 `UART5 100k 9E2`，偏向 SBUS。
+- 这次 `bsp_rc` 默认是按 DJI DBUS 的 `1 stop bit` 处理。
+
+后续怎么改：
+- 如果你最终接的是 SBUS 接收机，改 `BSP_RC_UART_STOPBITS` 为 `UART_STOPBITS_2`。
+- 如果接的是 DJI DBUS，保持默认 `UART_STOPBITS_1`。
+
+#### 问题 2：目前只重构了 `bsp_rc`，上层遥控解析文件还没有一起统一
+后续怎么改：
+- 后面如果要彻底收口，建议把 `bsp_rc` 和 `i6x` / `remote_control` 的接收入口统一成一套回调接口。
+
+### 6. 追加修正：bsp_rc 不修改底层
+- 根据后续要求，`bsp_rc` 已再次收口为“纯 BSP 适配层”。
+- 现在它不再在内部修改 `UART5`、DMA、寄存器或 HAL 初始化参数。
+- 底层串口配置必须继续由 CubeMX、`drv_uart` 或工程现有串口接收链路负责。
+- `bsp_rc` 当前只提供：
+  - 接收缓冲区登记
+  - 帧回调注册
+  - `RC_Process_Received_Data()` 数据转发入口
+  - 使能/失能状态管理
+
+涉及文件：
+- `User_File/2_Device/Remote/bsp_rc.h`
+- `User_File/2_Device/Remote/bsp_rc.c`
+
+### 7. 追加修复：NULL 编译问题
+- `bsp_rc.c` 中使用了 `NULL`，但之前没有包含 `<stddef.h>`。
+- 这会导致部分编译环境下出现 `NULL undeclared` 或同类编译错误。
+- 已在 `User_File/2_Device/Remote/bsp_rc.c` 中补充 `<stddef.h>`。
+- 同时修正了 `RC_Init()` 参数非法时的软件状态，避免初始化失败后残留旧缓冲区和启用状态。
+
+### 8. 追加整理：bsp_rc 按 i6x 风格重写
+- 重新整理了 `User_File/2_Device/Remote/bsp_rc.h`
+- 重新整理了 `User_File/2_Device/Remote/bsp_rc.c`
+
+这次整理的目标：
+- 让 `bsp_rc` 和 `i6x` 一样更容易读
+- 注释更直白
+- 接口职责更清楚
+- 不再混入底层串口配置逻辑
+
+具体调整：
+- 头文件中补充了完整职责说明和逐个接口注释
+- 实现文件改成“文件说明 + 少量静态状态 + 明确的函数边界”
+- 新增 `RC_Buffer_Config_Is_Valid()`，把缓冲区合法性检查单独收口
+- `RC_Process_Received_Data()` 现在会明确校验：
+  - 是否已启用
+  - 缓冲区配置是否有效
+  - 输入指针和长度是否合法
+  - 输入缓冲区是否属于登记过的双缓冲区
+
+当前好处：
+- 逻辑比之前更线性
+- 维护时更容易判断每个函数在做什么
+- 和 `i6x.c` 的“单职责 + 直接判断 + 早返回”风格更一致
