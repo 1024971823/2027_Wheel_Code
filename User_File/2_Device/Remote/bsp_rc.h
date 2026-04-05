@@ -1,87 +1,47 @@
+/******************************************************************************
+ * @file    bsp_rc.h
+ * @brief   遥控器板级支持包 —— UART5 + DMA（适配达妙MC02开发板 STM32H723）
+ * @note    根据 robot_param.h 中 __RC_TYPE 自动适配：
+ *          - RC_DT7  : DJI DBUS  100000-8E1, 18字节帧, 信号非反相
+ *          - RC_SBUS : 标准SBUS  100000-8E2, 25字节帧, 信号反相(板载硬件反相)
+ *          UART5 的 DMA 接收由 drv_uart 中间件管理，本模块负责：
+ *          1. 针对不同遥控器协议修正 UART5 硬件参数(停止位/RX反相)
+ *          2. 通过 drv_uart 注册接收回调并启动 DMA
+ *          3. 提供关闭/重启接口用于错误恢复和热插拔
+ ******************************************************************************/
 #ifndef BSP_RC_H
 #define BSP_RC_H
 
 #include "struct_typedef.h"
-#include <stdbool.h>
-
-/*
- * bsp_rc only keeps remote-control BSP-side buffer / callback management.
- * It does not configure UART, DMA or interrupts.
- *
- * The lower layer should pass raw receiver bytes into RC_Process_Received_Data().
- *
- * DJI DBUS on STM32H723:
- *   protocol side: 100k, 8E1, inverted
- *   HAL config side: 9-bit word length + even parity
- *
- * Reason:
- *   On STM32H7 HAL, parity occupies one hardware bit in the word length field.
- *   If configured as 8-bit + even parity, effective payload becomes 7-bit and
- *   the 18-byte DBUS frame will decode incorrectly.
- */
-
-#define BSP_RC_DJI_DBUS_FRAME_LENGTH 18u
-
-typedef void (*RC_Frame_Handler)(uint8_t *buffer, uint16_t length);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief 初始化遥控 BSP 缓冲区信息
- * @param rx1_buf 底层接收缓冲区 0
- * @param rx2_buf 底层接收缓冲区 1
- * @param dma_buf_num 单个缓冲区长度
- */
-void RC_Init(uint8_t *rx1_buf, uint8_t *rx2_buf, uint16_t dma_buf_num);
+/* ---- 帧长度常量 ---- */
+#define RC_DT7_FRAME_LENGTH     18u   /* DJI DT7 DBUS 帧长 */
+#define RC_SBUS_FRAME_LENGTH    25u   /* 标准 SBUS 帧长   */
+
+/* ---- 回调函数类型 ---- */
+typedef void (*RC_RxCallback_t)(uint8_t *buffer, uint16_t length);
 
 /**
- * @brief 禁用遥控 BSP
+ * @brief  初始化遥控器接收（UART5 + DMA）
+ * @param  callback  每收到一帧调用的回调函数（在中断上下文执行）
+ * @note   内部会根据 __RC_TYPE 自动调整 UART5 的停止位与 RX 反相配置，
+ *         随后通过 drv_uart 中间件注册回调并启动 DMA 接收。
+ */
+void RC_Init(RC_RxCallback_t callback);
+
+/**
+ * @brief  关闭遥控器的 UART5 DMA 接收
  */
 void RC_Disable(void);
 
 /**
- * @brief 兼容旧接口，等价于 RC_Disable()
+ * @brief  重启遥控器的 UART5 DMA 接收（用于错误恢复 / 热插拔）
  */
-void RC_unable(void);
-
-/**
- * @brief 重新启用遥控 BSP，可选择更新缓冲区长度
- * @param dma_buf_num 新长度，传 0 表示保持原长度
- */
-void RC_Restart(uint16_t dma_buf_num);
-
-/**
- * @brief 兼容旧接口，等价于 RC_Restart()
- */
-void RC_restart(uint16_t dma_buf_num);
-
-/**
- * @brief 注册接收完成后的帧处理回调
- * @param handler 回调函数，可为 NULL
- */
-void RC_Register_Frame_Handler(RC_Frame_Handler handler);
-
-/**
- * @brief 兼容旧接口，当前不处理底层中断
- * @note  底层 IRQ 应由 UART/DMA 驱动自行处理
- */
-void RC_IRQHandler(void);
-
-/**
- * @brief 将底层收到的一帧数据送入遥控 BSP
- * @param buffer 原始数据缓冲区
- * @param length 有效长度
- */
-void RC_Process_Received_Data(uint8_t *buffer, uint16_t length);
-
-/**
- * @brief 获取当前是否处于启用状态
- * @return true 已启用
- * @return false 未启用
- */
-bool RC_Is_Enabled(void);
+void RC_Restart(void);
 
 #ifdef __cplusplus
 }

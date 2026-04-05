@@ -16,6 +16,7 @@
 #include "drv_wdg.h"
 #include "dvc_vofa.h"
 #include "i6x.h"
+#include "remote_control.h"
 #include "sys_timestamp.h"
 
 Class_Vofa_USB Vofa_USB;
@@ -74,13 +75,8 @@ void CAN1_Callback(FDCAN_RxHeaderTypeDef &Header, uint8_t *Buffer)
     }
 }
 
-static void UART5_SBUS_Callback(uint8_t *Buffer, uint16_t Length)
-{
-    if (Length == I6X_FRAME_LENGTH)
-    {
-        sbus_to_i6x(get_i6x_point(), Buffer);
-    }
-}
+/* UART5 遥控器回调已迁移至 remote_control.c :: remote_control_rx_callback()
+ * 通过 bsp_rc → drv_uart 中间件注册, 见 remote_control_init() */
 
 void OSPI2_Polling_Callback()
 {
@@ -214,7 +210,7 @@ void Task_Init()
     App_Gimbal_Init(&hfdcan1);
     App_Chassis_Init(&hfdcan1, &Vofa_USB);
 
-    UART_Init(&huart5, UART5_SBUS_Callback);
+    remote_control_init();
 
     BSP_W25Q64JV.Init();
 
@@ -322,6 +318,8 @@ extern "C" void RTOS_Remote_Task_Loop(void)
         BSP_WS2812.TIM_10ms_Write_PeriodElapsedCallback();
     }
 
+    /* 遥控器掉线检测 + 数据可在此处理 */
+    (void)get_remote_control_point();
     (void)get_i6x_point();
 }
 
