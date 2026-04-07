@@ -196,13 +196,13 @@ typedef struct
         /* API                                                            */
         /******************************************************************/
 
-        extern inline bool GetRcOffline(void);
+        extern bool GetRcOffline(void);
 
-        extern inline float GetDt7RcCh(uint8_t ch);
-        extern inline char GetDt7RcSw(uint8_t sw);
-        extern inline float GetDt7MouseSpeed(uint8_t axis);
-        extern inline bool GetDt7Mouse(uint8_t key);
-        extern inline bool GetDt7Keyboard(uint8_t key);
+        extern float GetDt7RcCh(uint8_t ch);
+        extern char GetDt7RcSw(uint8_t sw);
+        extern float GetDt7MouseSpeed(uint8_t axis);
+        extern bool GetDt7Mouse(uint8_t key);
+        extern bool GetDt7Keyboard(uint8_t key);
 
 #ifdef __cplusplus
 }

@@ -737,3 +737,395 @@ RAM_D1: 317872 B / 320 KB (97.01%)
 - 遥控模式切换可在 `RTOS_Remote_Task_Loop()` 中实现 FSM。
 - 如需支持新的遥控器型号，在 `remote_control.c` 中新增对应的 SBUS 解析函数，并在 `robot_typedef.h` 中添加宏定义。
 - 切换遥控器只需修改 `robot_param.h` 中的 `__RC_TYPE` 宏。
+
+---
+
+## 2026-04-06 IMU & USB 通信层适配达妙 MC02 (H7)
+
+### 1. 本次修改目标
+
+- 将 IMU 驱动和解算代码从大疆 C 板 (STM32F407) 适配到达妙 MC02 开发板 (STM32H723)。
+- 移除所有不存在的 F407 依赖（bmi088driver、ist8310driver、bsp_spi、bsp_imu_pwm、ahrs、detect_task、kalman_filter、pid 等）。
+- 使用达妙板级支持包 `BSP_BMI088` 的 C++ 类替代原始裸操作。
+- 移除 IST8310 磁力计相关代码（达妙板无磁力计）。
+- 将 USB 通信任务从 F407 USB CDC 直接操作重构为使用 `drv_usb.h` 中间件。
+- 新增 CRC8/CRC16 校验模块（原项目缺失该依赖）。
+- 移除不存在的 `supervisory_computer_cmd.h`，将其 API 合并到 `usb_task.h`。
+
+### 2. 修改文件
+
+#### 重写文件
+
+| 文件                                                | 说明                                                     |
+| --------------------------------------------------- | -------------------------------------------------------- |
+| `application/IMU/IMU_task.h`                        | 移除所有 F407 DMA/IST8310/温控常量，简化为 3 个 API 声明 |
+| `application/IMU/IMU_task.cpp`（原 `.c`）           | 完全重写，使用 BSP_BMI088 替代手动 SPI DMA 和 IST8310    |
+| `application/IMU/IMU_solve.h`                       | 移除 kalman_filter.h 依赖和 INS_t 结构体                 |
+| `application/IMU/IMU_solve.cpp`（原 `.c`）          | 简化为 BSP_BMI088 的薄封装                               |
+| `application/communication/usb_task.cpp`（原 `.c`） | 使用 drv_usb 中间件，回调接收替代轮询                    |
+
+#### 修改文件
+
+| 文件                                    | 说明                                        |
+| --------------------------------------- | ------------------------------------------- |
+| `application/communication/usb_task.h`  | 添加 `extern "C"` 守卫，合入 GetScCmd* 声明 |
+| `application/communication/usb_debug.h` | 添加 `extern "C"` 守卫                      |
+
+#### 新增文件
+
+| 文件                                     | 说明                              |
+| ---------------------------------------- | --------------------------------- |
+| `application/communication/CRC8_CRC16.h` | CRC8/CRC16 校验声明               |
+| `application/communication/CRC8_CRC16.c` | CRC8(0x31)/CRC16(0x8005) 查表实现 |
+
+### 3. 具体改了什么
+
+#### 3.1 IMU 驱动层 (`IMU_task`)
+
+**为什么改：**
+- 原代码直接操作 SPI1 DMA 寄存器（F407），达妙板使用 SPI2，且 BSP 层已封装。
+- 原代码包含 IST8310 磁力计初始化和数据读取，达妙板无磁力计。
+- 原代码手动管理 BMI088 加速度计/陀螺仪的 SPI CS 和 DMA 回调。
+
+**改成了什么：**
+- `IMU_task.cpp` 直接使用 `BSP_BMI088` 对象（在 `tsk_config_and_callback.cpp` 中实例化）的 API：
+  - `BSP_BMI088.Get_Euler_Angle()` → 欧拉角
+  - `BSP_BMI088.Get_Gyro_Body()` → 机体角速度
+  - `BSP_BMI088.Get_Accel()` → 加速度
+- 移除了 ~450 行 F407 特有代码（DMA 回调、SPI 命令构建、IST8310 驱动、温度 PID、板旋转矩阵）。
+- IMU 数据通过 `Publish/Subscribe` 机制发布。
+
+#### 3.2 IMU 解算层 (`IMU_solve`)
+
+**为什么改：**
+- 原代码依赖 `kalman_filter.h`（F407 项目文件，本项目不存在）。
+- 原 EKF 解算约 400 行，BSP_BMI088 已内置 `Class_Filter_EKF<4,3,3>` 完成姿态融合。
+
+**改成了什么：**
+- `GetEkfAngle(axis)` → 转发到 `BSP_BMI088.Get_Euler_Angle()`。
+- `GetEkfAccel(axis)` → 转发到 `BSP_BMI088.Get_Accel()`。
+- 代码从 ~468 行缩减到 ~50 行。
+
+#### 3.3 USB 通信层 (`usb_task`)
+
+**为什么改：**
+- 原代码使用 `USB_Transmit()`/`USB_Receive()`（F407 USB CDC，本项目未定义）。
+- 原代码调用 `MX_USB_DEVICE_Init()`（由 `Task_Init` 中的 `USB_Init()` 统一初始化）。
+- 原代码包含 `supervisory_computer_cmd.h`（本项目不存在）。
+
+**改成了什么：**
+- 发送：`USB_Transmit()` → `USB_Transmit_Data()`（来自 `drv_usb.h`）。
+- 接收：轮询 `USB_Receive()` → 回调 `UsbRxCallback()`（通过 `USB_Init()` 注册）。
+- 将 `GetScCmd*` 系列函数声明合并到 `usb_task.h`。
+- 保留了完整的 CRC8 帧头校验 + CRC16 全帧校验逻辑。
+- 保留了 13 种发送数据包 + 3 种接收数据包的协议结构。
+
+#### 3.4 CRC8/CRC16 模块
+
+**为什么新增：**
+- USB 协议帧需要 CRC8 校验帧头和 CRC16 校验全帧。
+- 原项目中该模块缺失。
+
+**实现：**
+- CRC8: 多项式 0x31，初始值 0xFF，256 项查找表。
+- CRC16: 多项式 0x8005，初始值 0xFFFF，256 项查找表。
+
+### 4. 架构对比
+
+```
+【原 F407 架构】                          【新 H7 架构】
+IMU_task.c                                IMU_task.cpp
+  ├── SPI1 DMA 手动操作                     └── BSP_BMI088.Get_Euler_Angle()
+  ├── IST8310 磁力计驱动                         BSP_BMI088.Get_Gyro_Body()
+  ├── BMI088 裸寄存器读取                         BSP_BMI088.Get_Accel()
+  ├── 温度 PID 控制
+  └── HAL_GPIO_EXTI_Callback
+
+IMU_solve.c                               IMU_solve.cpp
+  ├── 自定义 EKF (kalman_filter.h)          └── BSP_BMI088 内置 EKF 封装
+  ├── 四元数手动计算
+  └── 重力向量估计
+
+usb_task.c                                usb_task.cpp
+  ├── USB_Receive() 轮询                    ├── UsbRxCallback() 回调
+  ├── USB_Transmit() 直接发送                ├── USB_Transmit_Data() 中间件
+  ├── MX_USB_DEVICE_Init()                  └── USB_Init() 统一初始化
+  └── supervisory_computer_cmd.h
+```
+
+### 5. 后续使用说明
+
+#### IMU 数据获取
+
+```c
+#include "IMU.h"
+
+// 获取欧拉角 (rad)
+float yaw   = GetImuAngle(AX_Z);
+float pitch = GetImuAngle(AX_Y);
+float roll  = GetImuAngle(AX_X);
+
+// 获取角速度 (rad/s)
+float gyro_yaw = GetImuVelocity(AX_Z);
+
+// 获取加速度 (m/s²)
+float accel_x = GetImuAccel(AX_X);
+```
+
+#### USB 通信
+
+```c
+#include "usb_task.h"
+#include "usb_debug.h"
+
+// 发送调试数据（在任意位置调用）
+ModifyDebugDataPackage(0, some_value, "target");
+
+// 获取上位机指令
+float cmd_yaw = GetScCmdGimbalAngle(AX_YAW);
+bool fire = GetScCmdFire();
+```
+
+#### 注意事项
+
+1. **USB 回调冲突**：`usb_task` 启动时会通过 `USB_Init()` 重新注册接收回调，覆盖 `tsk_config_and_callback.cpp` 中为 Vofa 设置的回调。如需同时使用 Vofa 调试和 USB 协议通信，需自行实现回调分发。
+2. **usb_task 未自动创建**：当前 `freertos.c` 中未创建 usb_task 线程。如需启用，请在 `MX_FREERTOS_Init()` 中添加任务创建。
+3. **BSP_BMI088 初始化**：IMU 硬件初始化由 `tsk_config_and_callback.cpp` 中的 `Task_Init()` 完成，IMU_task 只负责读取数据。
+
+### 6. 当前已知问题 / 限制
+
+1. `usb_task` 线程未在 FreeRTOS 中创建（需用户手动添加）。
+2. USB 接收回调会覆盖 Vofa 回调，两者不能同时使用。
+3. `usb_typdef.h` 中的协议结构未修改（协议层与硬件无关，保持原样）。
+4. **编译阻断（预存问题）**：`application/chassis/chassis_balance.h` 包含 `kalman_filter.h`、`motor.h`、`pid.h`、`user_lib.h` 等 F407 旧依赖，这些文件在达妙项目中不存在。由于 `robot_param_balanced_infantry.h` 设置了 `CHASSIS_TYPE CHASSIS_BALANCE`，导致这些 `#include` 被激活。此错误与本次 IMU/USB 重构无关，需后续单独重构底盘模块（用 `alg_filter_kalman.h`、`alg_pid.h` 等中间件替代）。
+5. **预存警告**：`alg_basic.cpp`（符号比较）、`dvc_motor_dm.cpp`（switch 未覆盖）、`bsp_ws2812.cpp`（未使用变量）存在预存警告，与本次修改无关。
+
+---
+
+## 2026-04-07 底盘平衡控制全栈适配达妙 MC02 (H7)
+
+### 1. 本次修改目标
+
+- 将 `application/chassis/` 目录下所有文件从大疆 C 板 (STM32F407) 完整适配到达妙 MC02 (STM32H723)。
+- 移除所有不存在的 F407 依赖（`kalman_filter.h`、`motor.h`、`pid.h`、`user_lib.h`、`CAN_communication.h`、`bsp_delay.h`、`detect_task.h`、`signal_generator.h` 等）。
+- 使用达妙中间件 C++ 类替代原始 F407 驱动：`Class_Motor_DM_Normal`、`Class_PID`、`Class_Filter_Kalman<2,1,2>`。
+- 修复跨文件 `extern inline` 警告。
+- 达成 **0 错误 0 警告** 编译。
+
+### 2. 修改文件
+
+#### 重写文件
+
+| 文件                                                 | 说明                                                      |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `application/chassis/chassis_balance.h`              | 完全重写，所有类型从 F407 裸结构体迁移到达妙中间件 C++ 类 |
+| `application/chassis/chassis_balance.cpp`（原 `.c`） | 完全重写 ~800 行，适配新 Motor/PID/Kalman/CAN API         |
+
+#### 修改文件
+
+| 文件                                           | 说明                                                    |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `application/chassis/chassis_balance_extras.h` | 添加 `extern "C"` 守卫，修复 `extern inline` → `extern` |
+| `application/chassis/chassis_balance_extras.c` | 移除 `inline` 关键字（`CalcLegLengthDiff`）             |
+| `application/chassis/chassis.h`                | 添加 `extern "C"` 守卫                                  |
+| `application/IMU/IMU.h`                        | `extern inline` → `extern`（3 个函数）                  |
+| `application/IMU/IMU_task.cpp`                 | 移除定义处 `inline`（3 个函数）                         |
+| `application/other/remote_control.h`           | `extern inline` → `extern`（6 个函数）                  |
+| `application/other/remote_control.c`           | 移除定义处 `inline`（6 个函数）                         |
+| `application/communication/usb_task.cpp`       | `Subscribe()` 参数添加 `(char *)` 强转                  |
+
+#### 删除文件
+
+| 文件                                    | 说明             |
+| --------------------------------------- | ---------------- |
+| `application/chassis/chassis_balance.c` | 已被 `.cpp` 替代 |
+
+### 3. 具体改了什么
+
+#### 3.1 chassis_balance.h — 类型系统迁移
+
+**移除的 F407 依赖：**
+
+```c
+// 以下头文件全部移除
+#include "kalman_filter.h"   // F407 卡尔曼滤波
+#include "motor.h"           // F407 通用电机驱动
+#include "pid.h"             // F407 PID 控制器
+#include "user_lib.h"        // F407 工具库
+#include "CAN_communication.h"
+#include "bsp_delay.h"
+#include "detect_task.h"
+```
+
+**替代的达妙中间件头文件：**
+
+```cpp
+#include "dvc_motor_dm.h"     // Class_Motor_DM_Normal (DM8009 MIT模式)
+#include "alg_pid.h"          // Class_PID
+#include "alg_filter_kalman.h"// Class_Filter_Kalman<State, Input, Measurement>
+#include "drv_can.h"          // CAN_Transmit_Data (LK电机原始帧)
+#include "alg_basic.h"        // Basic_Math_Constrain / Basic_Math_Abs
+```
+
+**核心类型迁移表：**
+
+| F407 原类型                 | 达妙新类型                   | 用途                  |
+| --------------------------- | ---------------------------- | --------------------- |
+| `Motor_s` (自定义)          | `Class_Motor_DM_Normal`      | DM8009 关节电机 (4个) |
+| `pid_type_def`              | `Class_PID`                  | 所有 PID 控制回路     |
+| `KalmanFilter_t`            | `Class_Filter_Kalman<2,1,2>` | 观测器卡尔曼滤波      |
+| `first_order_filter_type_t` | `LowPassFilter_t` (本地定义) | 一阶低通滤波          |
+| `Motor_s` (LK 轮毂)         | `WheelMotor_t` (本地定义)    | MF9025 轮毂电机 (2个) |
+
+**新增本地类型：**
+
+- `LowPassFilter_t`：简单 alpha-IIR 低通滤波器（达妙中间件只有 FIR `Class_Filter_Frequency`，不适用于实时控制）
+- `WheelMotor_t`：LK/瓴控 MF9025 轮毂电机反馈/设定值结构（达妙中间件无 LK 电机驱动）
+
+#### 3.2 chassis_balance.cpp — 控制逻辑适配
+
+**（原 chassis_balance.c → .cpp，C → C++ 重命名）**
+
+**电机 API 迁移：**
+
+```
+F407:  MotorInit(&motor, id, can, type, dir, ...)
+H7:    motor.Init(&hfdcanN, rx_id, tx_id,
+                  Motor_DM_Control_Method_NORMAL_MIT,
+                  12.5f, 25.0f, 10.0f)
+
+F407:  GetMotorMeasure(&motor) → motor.measure.angle/velocity/torque
+H7:    motor.Get_Now_Angle() / Get_Now_Omega() / Get_Now_Torque()
+       (CAN 回调自动更新，无需手动调用)
+
+F407:  DmMitCtrlTorque(hcan, id, torque)
+H7:    motor.Set_Control_Angle(0); motor.Set_Control_Omega(0);
+       motor.Set_K_P(0); motor.Set_K_D(0);
+       motor.Set_Control_Torque(torque);
+       motor.TIM_Send_PeriodElapsedCallback()
+
+F407:  DmEnable(hcan, id)  /  DmMitStop(hcan, id)
+H7:    motor.CAN_Send_Enter()  /  motor.CAN_Send_Exit()
+```
+
+**PID API 迁移：**
+
+```
+F407:  PID_init(&pid, mode, params[], max_out, max_iout)
+H7:    pid.Init(kp, ki, kd, 0, max_iout, max_out, 0.001f)
+
+F407:  PID_calc(&pid, now, target)  → 返回 pid.out
+H7:    pid.Set_Now(now); pid.Set_Target(target);
+       pid.TIM_Calculate_PeriodElapsedCallback();
+       pid.Get_Out()
+
+F407:  PID_clear(&pid)
+H7:    pid.Set_Integral_Error(0)
+```
+
+**卡尔曼滤波 API 迁移：**
+
+```
+F407:  Kalman_Filter_Init(&kf, n, 0, m)
+       kf.FilteredValue[i] / kf.MeasuredVector[i] / kf.A_Data[i]
+H7:    kf.Init(A, B, H, Q, R, P, X, U)
+       kf.Vector_X.Data[i] / kf.Vector_Z.Data[i] / kf.Matrix_A.Data[i]
+       kf.TIM_Predict_PeriodElapsedCallback()
+       kf.TIM_Update_PeriodElapsedCallback()
+```
+
+**LK 轮毂电机（无达妙驱动，自研 CAN 帧）：**
+
+```cpp
+// 双电机扭矩控制 (CAN ID 0x280)
+static void LkMultipleTorqueControl(FDCAN_HandleTypeDef *hcan,
+                                     int16_t torque1, int16_t torque2) {
+    uint8_t data[8] = { ... };  // [0:1]=torque1, [2:3]=torque2, [4:7]=0
+    CAN_Transmit_Data(hcan, 0x280, data, 8);
+}
+```
+
+**DWT 延时（替代 bsp_delay.h）：**
+
+```cpp
+static void delay_us(uint32_t us) {
+    uint32_t start = DWT->CYCCNT;
+    uint32_t ticks = us * (SystemCoreClock / 1000000);
+    while ((DWT->CYCCNT - start) < ticks);
+}
+```
+
+**GIMBAL_TYPE 兼容：**
+
+当 `GIMBAL_TYPE == GIMBAL_NONE` 时，`GetGimbalDeltaYawMid()` 和 `GetGimbalInitJudgeReturn()` 缺少定义。在 `.cpp` 中提供静态 stub 实现：
+
+```cpp
+#if GIMBAL_TYPE == GIMBAL_NONE
+static float GetGimbalDeltaYawMid(void) { return 0.0f; }
+static int GetGimbalInitJudgeReturn(void) { return 0; }
+#endif
+```
+
+#### 3.3 extern inline 修复
+
+**问题根因：**
+
+F407 项目中 `extern inline` 在纯 C 编译时遵循 GNU inline 语义（外部可见 + 编译器可选择内联），但当对应 `.h` 被 C++ 编译单元（`.cpp`）include 时，C++ 标准 `inline` 语义不同，GCC 会产生 "inline function used but never defined" 警告。
+
+**修复范围：**
+
+| 头文件                     | 函数                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `IMU.h`                    | `GetImuAngle`, `GetImuVelocity`, `GetImuAccel`                                                  |
+| `remote_control.h`         | `GetRcOffline`, `GetDt7RcCh`, `GetDt7RcSw`, `GetDt7MouseSpeed`, `GetDt7Mouse`, `GetDt7Keyboard` |
+| `chassis_balance_extras.h` | `CalcLegLengthDiff`                                                                             |
+
+**修复方式：** 声明处移除 `inline`，定义处移除 `inline`，保留普通 `extern` 函数链接。
+
+### 4. 架构对比
+
+```
+【原 F407 架构】                          【新 H7 架构】
+chassis_balance.c                         chassis_balance.cpp
+  ├── Motor_s (自定义裸结构体)               ├── Class_Motor_DM_Normal ×4 (关节)
+  ├── pid_type_def (F407 PID)                ├── WheelMotor_t ×2 (轮毂, 自研CAN)
+  ├── KalmanFilter_t (F407 卡尔曼)           ├── Class_PID ×N (中间件PID)
+  ├── first_order_filter_type_t              ├── Class_Filter_Kalman<2,1,2> ×N
+  ├── DmMitCtrl*() (裸CAN发送)              ├── LowPassFilter_t (本地简单IIR)
+  ├── LkMultiple*() (裸CAN发送)             ├── motor.TIM_Send_PeriodElapsedCallback()
+  ├── PID_calc/init/clear()                  ├── pid.TIM_Calculate_PeriodElapsedCallback()
+  ├── Kalman_Filter_Init/Update()            ├── kf.TIM_Predict/Update_...Callback()
+  ├── bsp_delay.h → delay_us()              └── DWT->CYCCNT busy-wait delay_us()
+  └── detect_task.h → toe_is_error()
+```
+
+### 5. 业务逻辑保留情况
+
+以下控制逻辑**完整保留**，仅替换底层 API 调用：
+
+| 模块             | 说明                                                      |
+| ---------------- | --------------------------------------------------------- |
+| LQR 状态反馈     | 12 维状态向量 × 增益矩阵，输出扭矩/力                     |
+| VMC 虚拟模型控制 | 五连杆正/逆运动学，腿部扭矩→关节扭矩映射                  |
+| 卡尔曼观测器     | 机体速度/位移估计 (2 状态 × 2 观测)                       |
+| 抬腿检测         | 腿长差值+支撑力判断，PD 回中策略                          |
+| 防劈叉           | 左右腿长差异 PID 补偿                                     |
+| 台阶检测         | 虚拟腿长突变分析                                          |
+| 多模式控制       | ZeroForce/Calibrate/OffHook/Normal/Debug/PosDebug/StandUp |
+| 校准流程         | 关节电机零位标定（MIT 力矩→位置锁定→保存零点）            |
+
+### 6. 当前已知问题 / 限制
+
+1. **LK MF9025 轮毂电机无中间件驱动**：当前使用自研 `LkMultipleTorqueControl()` / `LkMultipleIqControl()` 通过原始 CAN 帧控制。后续如达妙中间件新增 LK 驱动，可替换。
+2. **底盘任务未启用**：`tsk_config_and_callback.cpp` 中 `App_Chassis_Init()`、`App_Chassis_Ctrl_Task_Loop()`、`App_Chassis_Monitor_Task_Loop()` 调用仍被注释。启用前需确认 CAN ID 分配和电机接线。
+3. **RAM_D1 占用 97.75%**：接近满载，新增大型全局变量时需注意。
+4. **GIMBAL_TYPE 默认 GIMBAL_NONE**：云台联动功能（yaw 补偿、初始化判断）使用 stub 返回 0。启用云台后需修改 `robot_param.h`。
+5. **备份文件待清理**：`chassis_balance.c.bak`、`chassis_balance.h.bak` 保留用于参考，确认稳定后可删除。
+
+### 7. 编译结果
+
+```
+Build: 0 errors, 0 warnings
+FLASH: ~166 KB / 1 MB (15.8%)
+RAM_D1: ~320 KB / 320 KB (97.75%)
+```

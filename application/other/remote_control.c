@@ -443,7 +443,7 @@ static void Et08aSbusToRc(const uint8_t *sbus_buf, RC_ctrl_t *rc_ctrl)
   * @brief          获取遥控器是否离线。
   * @retval         true:离线，false:在线
   */
-inline bool GetRcOffline(void)
+bool GetRcOffline(void)
 {
 #if __RC_TYPE == RC_DT7
 #define USE_SBUS_LOST_COUNT 0
@@ -462,19 +462,19 @@ inline bool GetRcOffline(void)
   * @param[in]      ch 通道id，0-右平, 1-右竖, 2-左平, 3-左竖, 4-左滚轮，配合ch id宏进行使用
   * @retval         DT7遥控器通道值，范围为 [−1,1]
   */
-inline float GetDt7RcCh(uint8_t ch) { return rc_ctrl.rc.ch[ch] * RC_TO_ONE; }
+float GetDt7RcCh(uint8_t ch) { return rc_ctrl.rc.ch[ch] * RC_TO_ONE; }
 /**
   * @brief          获取DT7遥控器拨杆值，可配合switch_is_xxx系列宏函数使用。
   * @param[in]      sw 通道id，0-右, 1-左，配合sw id宏进行使用
   * @retval         DT7遥控器拨杆值，范围为{1,2,3}
   */
-inline char GetDt7RcSw(uint8_t sw) { return rc_ctrl.rc.s[sw]; }
+char GetDt7RcSw(uint8_t sw) { return rc_ctrl.rc.s[sw]; }
 /**
   * @brief          获取鼠标axis轴的移动速度
   * @param[in]      axis 轴id, 0-x, 1-y, 2-z，配合轴id宏进行使用
   * @retval         鼠标axis轴移动速度
   */
-inline float GetDt7MouseSpeed(uint8_t axis)
+float GetDt7MouseSpeed(uint8_t axis)
 {
     switch (axis) {
         case AX_X:
@@ -492,7 +492,7 @@ inline float GetDt7MouseSpeed(uint8_t axis)
   * @param[in]      key 按键id，配合按键id宏进行使用
   * @retval         鼠标按键是否被按下
   */
-inline bool GetDt7Mouse(uint8_t key)
+bool GetDt7Mouse(uint8_t key)
 {
     switch (key) {
         case KEY_LEFT:
@@ -508,5 +508,5 @@ inline bool GetDt7Mouse(uint8_t key)
   * @param[in]      key 按键id，配合按键id宏进行使用
   * @retval         键盘按键是否被按下
   */
-inline bool GetDt7Keyboard(uint8_t key) { return rc_ctrl.key.v & ((uint16_t)1 << key); }
+bool GetDt7Keyboard(uint8_t key) { return rc_ctrl.key.v & ((uint16_t)1 << key); }
 /*------------------------------ End of File ------------------------------*/

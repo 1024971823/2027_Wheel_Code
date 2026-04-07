@@ -42,11 +42,19 @@ typedef enum __ChassisState
     CHASSIS_STATE_ERROR   // 底盘错误状态
 } ChassisState_e;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 uint8_t ChassisGetStatus(void);
 uint32_t ChassisGetDuration(void);
 float ChassisGetSpeedVx(void);
 float ChassisGetSpeedVy(void);
 float ChassisGetSpeedWz(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // CHASSIS_TYPE
 #endif // CHASSIS_H
